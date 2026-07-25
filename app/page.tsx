@@ -1,9 +1,7 @@
-import Image from "next/image";
+import { MarketsPage } from "./components/MarketsPage";
+import { getInitialMarkets } from "./lib/server/markets";
 
-export default function Home() {
-  return (
-    <div className="h-24 w-24 bg-canvas">
-      Hello world
-    </div>
-  );
+export default async function Home() {
+  const initialMarkets = await getInitialMarkets();
+  return <MarketsPage initialMarkets={initialMarkets} />;
 }
