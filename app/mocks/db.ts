@@ -52,6 +52,14 @@ function clampPrice(price: number): number {
   return Math.min(0.99, Math.max(0.01, Number(price.toFixed(2))));
 }
 
+// yesPrice and noPrice must always sum to 1 (complementary outcome
+// probabilities) — derived from the already-clamped yesPrice rather than
+// clamped independently, since two independent clamps can drift the pair
+// apart once either side nears a bound.
+function complementPrice(price: number): number {
+  return Number((1 - price).toFixed(2));
+}
+
 export function listMarkets(): Market[] {
   return markets;
 }
