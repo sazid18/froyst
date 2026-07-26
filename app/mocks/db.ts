@@ -52,6 +52,14 @@ function clampPrice(price: number): number {
   return Math.min(0.99, Math.max(0.01, Number(price.toFixed(2))));
 }
 
+// yesPrice and noPrice must always sum to 1 (complementary outcome
+// probabilities) — derived from the already-clamped yesPrice rather than
+// clamped independently, since two independent clamps can drift the pair
+// apart once either side nears a bound.
+function complementPrice(price: number): number {
+  return Number((1 - price).toFixed(2));
+}
+
 export function listMarkets(): Market[] {
   return markets;
 }
@@ -121,7 +129,7 @@ export function createBid(payload: BidPayload, idempotencyKey?:string): Bid {
     if (!market.isResolved) {
       const nudge = payload.outcome === "yes" ? MOCK_BID_PRICE_NUDGE : -MOCK_BID_PRICE_NUDGE;
       market.yesPrice = clampPrice(market.yesPrice + nudge);
-      market.noPrice = clampPrice(market.noPrice - nudge);
+      market.noPrice = complementPrice(market.yesPrice);
     }
   }
 
@@ -168,7 +176,7 @@ const DEFAULT_DRIFT_BATCH_SIZE = 3;
 function driftMarket(market: Market): void {
   const direction = Math.random() < 0.5 ? 1 : -1;
   market.yesPrice = clampPrice(market.yesPrice + direction * DRIFT_STEP);
-  market.noPrice = clampPrice(market.noPrice - direction * DRIFT_STEP);
+  market.noPrice = complementPrice(market.yesPrice);
   market.volume += Math.round(DRIFT_VOLUME_MIN + Math.random() * DRIFT_VOLUME_RANGE);
   market.liquidity += Math.round(DRIFT_LIQUIDITY_MIN + Math.random() * DRIFT_LIQUIDITY_RANGE);
 }
