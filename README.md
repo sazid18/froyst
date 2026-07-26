@@ -1,24 +1,51 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+This is a [Next.js](https://nextjs.org) prediction-markets demo, bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
 
-## Getting Started
+## Installation
 
-First, run the development server:
+1. **Prerequisites**: Node.js 20 or later, and npm.
+2. Clone the repo and install dependencies:
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
-```
+   ```bash
+   npm install
+   ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+3. Set up environment variables (see [Connecting to the WebSocket server](#connecting-to-the-websocket-server) below) — a default `.env.local` pointing at `ws://localhost:4000` is already checked into the repo, so this step is optional unless you need a different server.
+
+4. Run the development server:
+
+   ```bash
+   npm run dev
+   ```
+
+   Open [http://localhost:3001](http://localhost:3001) with your browser to see the result. (Note: this project runs on port `3001`, not the Next.js default `3000`.)
 
 You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+## Connecting to the WebSocket server
+
+Live price/bid updates are delivered over a WebSocket connection, controlled by the `NEXT_PUBLIC_WS_URL` environment variable (read in `app/providers/AppStateProvider.tsx`):
+
+- **Unset** (no env file, or the var not defined): the app falls back to a client-side mock socket driver (`app/mocks/mockSocketDriver.ts`) that simulates live updates by polling `POST /api/mocks/drift` every 2 seconds — no real server needed, useful for local UI work without running a separate process.
+- **Set**: the app opens a real `WebSocket` connection to that URL instead (`app/lib/socket/socketManager.ts`), with automatic reconnect and backoff, and expects `MARKET_UPDATE` / `BID_UPDATE` messages pushed from the server.
+
+To connect to a real WebSocket server:
+
+1. Start your WebSocket server (for local dev, this typically listens on `ws://localhost:4000`).
+2. Add (or edit) a `.env.local` file at the project root:
+
+   ```bash
+   NEXT_PUBLIC_WS_URL=ws://localhost:4000
+   ```
+
+3. Restart `npm run dev` so Next.js picks up the new environment variable.
+
+`NEXT_PUBLIC_*` variables are inlined into the client bundle at build time, so changes require a dev server restart to take effect.
+
+## Testing
+
+```bash
+npm run test
+```
 
 ## Learn More
 
