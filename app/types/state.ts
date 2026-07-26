@@ -1,6 +1,11 @@
 export type BidOutcome = "yes" | "no";
 
-export type BidStatus = "pending" | "confirmed" | "failed";
+export type BidStatus =
+  | "pending"
+  | "confirmed"
+  | "resting"
+  | "cancelled"
+  | "failed";
 
 export type ConnectionStatus =
   | "connecting"
@@ -34,10 +39,27 @@ export type Bid = {
   userId: string;
   marketId: string;
   outcome: BidOutcome;
+  /** Total requested amount — immutable once placed, filled or not. */
   amount: number;
   price: number;
   status: BidStatus;
   createdAt: string;
+  /**
+   * Portion of `amount` that didn't fill immediately, because the
+   * request exceeded the market's liquidity at placement time (see
+   * db.ts's createBid). Absent or 0 for a fully filled ("confirmed")
+   * bid — every existing Bid literal in the codebase already omits this
+   * field and continues to mean "fully filled" exactly as before.
+   * Present (>0) while status === "resting" (still open, cancellable via
+   * cancelRestingBid) — and it STAYS present (>0) after cancellation
+   * (status === "cancelled"). Cancelling does not reset it to 0: it's
+   * kept as a historical record of how much never filled, so
+   * `amount - restingAmount` keeps correctly identifying the actually-
+   * filled position, and the UI can show "partially filled, remainder
+   * cancelled" instead of a bare "cancelled" that would wrongly read as
+   * the whole bid being voided.
+   */
+  restingAmount?: number;
 };
 
 export type BidPayload = {

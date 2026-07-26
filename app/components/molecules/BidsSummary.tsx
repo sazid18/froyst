@@ -14,7 +14,12 @@ function formatWhole(value: number): string {
 export function BidsSummary({ bids, valueOf, className }: BidsSummaryProps) {
   const activeBids = bids.filter((bid) => bid.status !== "failed");
   const count = activeBids.length;
-  const inAmount = activeBids.reduce((sum, bid) => sum + bid.amount, 0);
+  // Resting money hasn't executed against the market yet — only count the
+  // filled portion as "in" (at-risk) capital.
+  const inAmount = activeBids.reduce(
+    (sum, bid) => sum + (bid.amount - (bid.restingAmount ?? 0)),
+    0
+  );
   const nowAmount = activeBids.reduce((sum, bid) => sum + valueOf(bid), 0);
   const pnl = nowAmount - inAmount;
   const pnlSign = pnl < 0 ? "-" : "+";

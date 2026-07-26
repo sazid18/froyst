@@ -46,14 +46,22 @@ export function createMockSocketDriver(queryClient: QueryClient): MockSocketDriv
   let originalFetch: typeof window.fetch | undefined;
 
   async function emitDrift(): Promise<void> {
+    console.log("calling emit drift =========");
     try {
       const res = await fetch(`${API_BASE}/api/mocks/drift`, { method: "POST" });
       if (!res.ok) {
         return;
       }
-      const market = (await res.json()) as Market;
-      applySocketMessage(queryClient, marketUpdateFrom(market));
+      const driftedMarkets = (await res.json()) as Market[];
+      console.log("res === ", driftedMarkets);
+
+      // One MARKET_UPDATE per drifted market — the endpoint now moves
+      // several at once per tick, not just one.
+      for (const market of driftedMarkets) {
+        applySocketMessage(queryClient, marketUpdateFrom(market));
+      }
     } catch {
+      console.log("error emitting drift");
       // Best-effort — a missed drift tick is just one less price wiggle.
     }
   }

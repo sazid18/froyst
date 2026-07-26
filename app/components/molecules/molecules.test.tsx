@@ -222,7 +222,7 @@ describe("LiveCell", () => {
     expect(container.querySelector(".bg-gain-soft")).toBeNull();
   });
 
-  it("flashes gain-soft for volume when the value changes, then clears after ~700ms", () => {
+  it("flashes gain-soft for volume when the value changes, then clears after ~1s", () => {
     const { container, rerender } = render(
       <LiveCell value={100} tone="volume" />
     );
@@ -231,7 +231,7 @@ describe("LiveCell", () => {
     expect(container.querySelector(".bg-gain-soft")).not.toBeNull();
 
     act(() => {
-      vi.advanceTimersByTime(700);
+      vi.advanceTimersByTime(1000);
     });
     expect(container.querySelector(".bg-gain-soft")).toBeNull();
   });
@@ -254,8 +254,8 @@ describe("LiveCell", () => {
     vi.advanceTimersByTime(300);
     rerender(<LiveCell value={120} tone="volume" />);
 
-    // Original flash would have ended at t=700 from the first change; the
-    // second change at t=300 should have pushed it out to t=1000.
+    // Original flash would have ended at t=1000 from the first change;
+    // the second change at t=300 should have pushed it out to t=1300.
     act(() => {
       vi.advanceTimersByTime(650);
     });
@@ -277,7 +277,7 @@ describe("LiveCell", () => {
     );
     rerender(<LiveCell value={200} tone="volume" />);
     act(() => {
-      vi.advanceTimersByTime(700);
+      vi.advanceTimersByTime(1000);
     });
 
     expect(container.querySelector(".bg-gain-soft")).toBeNull();
@@ -470,6 +470,115 @@ describe("BidRow", () => {
     expect(screen.getByText("Will BTC hit 100k?")).toBeInTheDocument();
     expect(screen.getByText("no")).toBeInTheDocument();
   });
+
+  it("shows the resting amount and a cancel action for a resting bid", () => {
+    const onCancelResting = vi.fn();
+    render(
+      <BidRow
+        bid={makeBid({ amount: 100, price: 0.5, status: "resting", restingAmount: 40 })}
+        question="Will it happen?"
+        currentPrice={0.5}
+        settlement={null}
+        onCancelResting={onCancelResting}
+      />
+    );
+
+    expect(screen.getByText("$40.00 resting")).toBeInTheDocument();
+    const cancelButton = screen.getByRole("button", { name: "Cancel" });
+    fireEvent.click(cancelButton);
+    expect(onCancelResting).toHaveBeenCalledOnce();
+  });
+
+  it("hides the cancel action when no onCancelResting handler is given", () => {
+    render(
+      <BidRow
+        bid={makeBid({ amount: 100, price: 0.5, status: "resting", restingAmount: 40 })}
+        question="Will it happen?"
+        currentPrice={0.5}
+        settlement={null}
+      />
+    );
+
+    expect(screen.getByText("$40.00 resting")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Cancel" })).toBeNull();
+  });
+
+  it("shows no resting line for a fully filled (non-resting) bid", () => {
+    render(
+      <BidRow
+        bid={makeBid({ amount: 100, price: 0.5, status: "confirmed" })}
+        question="Will it happen?"
+        currentPrice={0.5}
+        settlement={null}
+      />
+    );
+
+    expect(screen.queryByText(/resting/)).toBeNull();
+  });
+
+  it("computes shares/value/P&L off the filled amount only, not the full requested amount", () => {
+    render(
+      <BidRow
+        bid={makeBid({ amount: 100, price: 0.5, status: "resting", restingAmount: 40 })}
+        question="Will it happen?"
+        currentPrice={0.5}
+        settlement={null}
+      />
+    );
+
+    // filled = 60 -> shares = 120 -> value at currentPrice 0.5 = $60, pnl = $0
+    expect(screen.getByText("120.0 SH @ $0.50")).toBeInTheDocument();
+    expect(screen.getByText("$60.00")).toBeInTheDocument();
+    expect(screen.getByText("+$0.00")).toBeInTheDocument();
+  });
+
+  it("shows a confirmed tag (not cancelled) and a past-tense note once a partially-filled bid's resting remainder is cancelled", () => {
+    // Regression: a bare "cancelled" tag on a bid that DID partially fill
+    // reads as the whole bid being voided — it should read as a real,
+    // confirmed position with a note about what got cancelled.
+    render(
+      <BidRow
+        bid={makeBid({ amount: 100, price: 0.5, status: "cancelled", restingAmount: 40 })}
+        question="Will it happen?"
+        currentPrice={0.5}
+        settlement={null}
+      />
+    );
+
+    expect(screen.getByText("confirmed")).toBeInTheDocument();
+    expect(screen.queryByText("cancelled")).toBeNull();
+    expect(screen.getByText("$40.00 resting cancelled")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Cancel" })).toBeNull();
+  });
+
+  it("still computes P&L off the filled amount after cancellation, not the full requested amount", () => {
+    render(
+      <BidRow
+        bid={makeBid({ amount: 100, price: 0.5, status: "cancelled", restingAmount: 40 })}
+        question="Will it happen?"
+        currentPrice={0.5}
+        settlement={null}
+      />
+    );
+
+    // filled = 60 (unchanged by cancellation) -> shares = 120 -> value = $60
+    expect(screen.getByText("120.0 SH @ $0.50")).toBeInTheDocument();
+    expect(screen.getByText("$60.00")).toBeInTheDocument();
+  });
+
+  it("shows a cancelled tag when a bid never filled at all (nothing to call confirmed)", () => {
+    render(
+      <BidRow
+        bid={makeBid({ amount: 100, price: 0.5, status: "cancelled", restingAmount: 100 })}
+        question="Will it happen?"
+        currentPrice={0.5}
+        settlement={null}
+      />
+    );
+
+    expect(screen.getByText("cancelled")).toBeInTheDocument();
+    expect(screen.queryByText("confirmed")).toBeNull();
+  });
 });
 
 describe("BidsSummary", () => {
@@ -494,6 +603,18 @@ describe("BidsSummary", () => {
 
     expect(
       screen.getByText("1 bid · in $50 · now $50 · +$0 P&L")
+    ).toBeInTheDocument();
+  });
+
+  it("counts only the filled portion of a resting bid as 'in' capital", () => {
+    const bids = [
+      makeBid({ id: "1", amount: 100, status: "resting", restingAmount: 40 }),
+    ];
+    render(<BidsSummary bids={bids} valueOf={() => 60} />);
+
+    // filled = 100 - 40 = 60 -> in $60, now $60, pnl $0
+    expect(
+      screen.getByText("1 bid · in $60 · now $60 · +$0 P&L")
     ).toBeInTheDocument();
   });
 });

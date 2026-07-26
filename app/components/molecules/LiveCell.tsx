@@ -12,7 +12,7 @@ export type LiveCellProps = {
   className?: string;
 };
 
-const FLASH_MS = 700;
+const FLASH_MS = 1000;
 
 const toneFlashClassMap: Record<LiveCellTone, string> = {
   volume: "bg-gain-soft",

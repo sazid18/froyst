@@ -4,7 +4,7 @@ import { useMemo } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { Divider, Icon, IconButton, Scrim, Text, cn } from "../atoms";
 import { BidRow, BidsSummary } from "../molecules";
-import { useBidsQuery } from "../../lib/query/bidsQueries";
+import { useBidsQuery, useCancelRestingBidMutation } from "../../lib/query/bidsQueries";
 import { useMarketQuery } from "../../lib/query/marketQueries";
 import { queryKeys } from "../../lib/query/queryKeys";
 import { useBidsPanelStore } from "../../store/useBidsPanelStore";
@@ -35,11 +35,12 @@ export function MyBidsSidebar() {
   // re-summarize. Each row's own currentPrice (below) doesn't share this
   // limitation — it subscribes directly via useMarketQuery.
   function valueOfBid(bid: Bid): number {
+    const filledAmount = bid.amount - (bid.restingAmount ?? 0);
     const market = queryClient.getQueryData<Market>(queryKeys.market(bid.marketId));
     if (!market) {
-      return bid.amount;
+      return filledAmount;
     }
-    const shares = bid.amount / bid.price;
+    const shares = filledAmount / bid.price;
     const currentPrice = bid.outcome === "yes" ? market.yesPrice : market.noPrice;
     return shares * currentPrice;
   }
@@ -67,7 +68,7 @@ export function MyBidsSidebar() {
         <BidsSummary bids={sortedBids} valueOf={valueOfBid} />
         <Divider />
 
-        <div className="flex flex-1 flex-col gap-3 overflow-y-auto">
+        <div className="scrollbar-hide flex flex-1 flex-col gap-3 overflow-y-auto">
           {sortedBids.map((bid) => (
             <MyBidsSidebarRow key={bid.id} bid={bid} />
           ))}
@@ -79,6 +80,7 @@ export function MyBidsSidebar() {
 
 function MyBidsSidebarRow({ bid }: { bid: Bid }) {
   const { data: market } = useMarketQuery(bid.marketId);
+  const cancelMutation = useCancelRestingBidMutation(DEMO_USER_ID);
   const currentPrice = market
     ? bid.outcome === "yes"
       ? market.yesPrice
@@ -96,6 +98,12 @@ function MyBidsSidebarRow({ bid }: { bid: Bid }) {
       // add a MARKET_RESOLVED socket message, so this can be computed
       // instead of left null.
       settlement={null}
+      onCancelResting={
+        bid.status === "resting"
+          ? () => cancelMutation.mutate({ bidId: bid.id })
+          : undefined
+      }
+      isCancelling={cancelMutation.isPending}
     />
   );
 }

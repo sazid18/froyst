@@ -49,3 +49,16 @@ export async function postBid(payload: BidPayload, idempotencyKey?: string): Pro
   }
   return res.json();
 }
+
+/** Cancels the still-open resting remainder of a bid (see db.ts's cancelRestingBid). */
+export async function cancelRestingBid(bidId: string, userId: string): Promise<Bid> {
+  const res = await fetch(`${API_BASE}/api/bids/${bidId}/cancel`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ userId }),
+  });
+  if (!res.ok) {
+    throw new Error(`Failed to cancel bid (${res.status})`);
+  }
+  return res.json();
+}

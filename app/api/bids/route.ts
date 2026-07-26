@@ -43,7 +43,8 @@ export async function POST(request: NextRequest) {
   }
 
   try {
-    const bid = createBid(payload);
+    const idempotencyKey = request.headers.get("Idempotency-Key") ?? undefined;
+    const bid = createBid(payload, idempotencyKey);
     return NextResponse.json(bid, { status: 201 });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Failed to place bid";

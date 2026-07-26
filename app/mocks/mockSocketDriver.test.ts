@@ -70,9 +70,12 @@ describe("createMockSocketDriver", () => {
     driver.stop();
   });
 
-  it("emits a MARKET_UPDATE roughly every 2s, built from the drift endpoint's response", async () => {
-    const drifted = makeMarket({ id: "drift-1", yesPrice: 0.61 });
-    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify(drifted), { status: 200 }));
+  it("emits one MARKET_UPDATE per drifted market roughly every 2s, built from the drift endpoint's response", async () => {
+    const driftedA = makeMarket({ id: "drift-1", yesPrice: 0.61 });
+    const driftedB = makeMarket({ id: "drift-2", yesPrice: 0.22 });
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify([driftedA, driftedB]), { status: 200 })
+    );
     vi.stubGlobal("fetch", fetchMock);
 
     const driver = createMockSocketDriver(queryClient);
@@ -86,11 +89,21 @@ describe("createMockSocketDriver", () => {
       expect.stringContaining("/api/mocks/drift"),
       expect.objectContaining({ method: "POST" })
     );
-    expect(applySocketMessageMock).toHaveBeenCalledWith(
+    expect(applySocketMessageMock).toHaveBeenCalledTimes(2);
+    expect(applySocketMessageMock).toHaveBeenNthCalledWith(
+      1,
       queryClient,
       expect.objectContaining({
         type: "MARKET_UPDATE",
         payload: expect.objectContaining({ id: "drift-1", yesPrice: 0.61 }),
+      })
+    );
+    expect(applySocketMessageMock).toHaveBeenNthCalledWith(
+      2,
+      queryClient,
+      expect.objectContaining({
+        type: "MARKET_UPDATE",
+        payload: expect.objectContaining({ id: "drift-2", yesPrice: 0.22 }),
       })
     );
 

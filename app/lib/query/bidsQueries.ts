@@ -2,7 +2,7 @@
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { Bid, BidPayload, Market } from "../../types/state";
-import { fetchBids, postBid } from "./api";
+import { cancelRestingBid, fetchBids, postBid } from "./api";
 import { BIDS_STALE_TIME_MS } from "./queryClient";
 import { queryKeys } from "./queryKeys";
 import { enqueueOfflineBid } from "../offline/offlineQueueDb";
@@ -109,6 +109,46 @@ export function usePlaceBidMutation(userId: string) {
       }
       queryClient.setQueryData<Bid[]>(queryKeys.bids(userId), (old) =>
         old?.map((bid) => (bid.id === clientId ? result.bid : bid))
+      );
+    },
+  });
+}
+
+type CancelRestingBidContext = {
+  previousBids: Bid[] | undefined;
+};
+
+/**
+ * Cancels the still-open resting remainder of a bid (the filled portion,
+ * if any, is untouched). Online-only — unlike usePlaceBidMutation, a
+ * failure here just rolls back the optimistic change and surfaces
+ * mutation.error; there's no offline queue for cancellation.
+ */
+export function useCancelRestingBidMutation(userId: string) {
+  const queryClient = useQueryClient();
+
+  return useMutation<Bid, Error, { bidId: string }, CancelRestingBidContext>({
+    mutationFn: ({ bidId }) => cancelRestingBid(bidId, userId),
+    onMutate: async ({ bidId }) => {
+      await queryClient.cancelQueries({ queryKey: queryKeys.bids(userId) });
+      const previousBids = queryClient.getQueryData<Bid[]>(queryKeys.bids(userId));
+
+      // Not touching restingAmount — see the field's own doc comment in
+      // types/state.ts for why it must survive cancellation.
+      queryClient.setQueryData<Bid[]>(queryKeys.bids(userId), (old) =>
+        old?.map((bid) => (bid.id === bidId ? { ...bid, status: "cancelled" as const } : bid))
+      );
+
+      return { previousBids };
+    },
+    onError: (_error, _variables, context) => {
+      if (context) {
+        queryClient.setQueryData(queryKeys.bids(userId), context.previousBids);
+      }
+    },
+    onSuccess: (bid) => {
+      queryClient.setQueryData<Bid[]>(queryKeys.bids(userId), (old) =>
+        old?.map((existing) => (existing.id === bid.id ? bid : existing))
       );
     },
   });

@@ -6,11 +6,11 @@ import { Text } from "./Text";
 const liveDotStateConfig: Record<ConnectionStatus, { dot: string; label: string }> = {
   open: {
     dot: "bg-gain animate-pulse motion-reduce:animate-none",
-    label: "live",
+    label: "Connected",
   },
   connecting: { dot: "bg-gold", label: "connecting…" },
   reconnecting: { dot: "bg-gold", label: "reconnecting…" },
-  closed: { dot: "bg-control", label: "offline" },
+  closed: { dot: "bg-control", label: "Offline" },
 };
 
 export type LiveDotProps = {

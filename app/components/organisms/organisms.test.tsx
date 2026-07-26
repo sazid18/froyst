@@ -3,23 +3,26 @@ import { fireEvent, render, screen } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { ReactElement } from "react";
-import type { Market } from "../../types/state";
+import type { Bid, Market } from "../../types/state";
 import { queryKeys } from "../../lib/query/queryKeys";
 import { useBidModalStore } from "../../store/useBidModalStore";
 import { useBidsPanelStore } from "../../store/useBidsPanelStore";
 import { useConnectionStore } from "../../store/useConnectionStore";
 
-const { fetchMarketsMock, fetchMarketMock, fetchBidsMock, postBidMock } = vi.hoisted(() => ({
-  fetchMarketsMock: vi.fn(),
-  fetchMarketMock: vi.fn(),
-  fetchBidsMock: vi.fn(),
-  postBidMock: vi.fn(),
-}));
+const { fetchMarketsMock, fetchMarketMock, fetchBidsMock, postBidMock, cancelRestingBidMock } =
+  vi.hoisted(() => ({
+    fetchMarketsMock: vi.fn(),
+    fetchMarketMock: vi.fn(),
+    fetchBidsMock: vi.fn(),
+    postBidMock: vi.fn(),
+    cancelRestingBidMock: vi.fn(),
+  }));
 vi.mock("../../lib/query/api", () => ({
   fetchMarkets: fetchMarketsMock,
   fetchMarket: fetchMarketMock,
   fetchBids: fetchBidsMock,
   postBid: postBidMock,
+  cancelRestingBid: cancelRestingBidMock,
 }));
 
 const { enqueueOfflineBidMock } = vi.hoisted(() => ({ enqueueOfflineBidMock: vi.fn() }));
@@ -34,6 +37,7 @@ const { MarketRow } = await import("./MarketRow");
 const { MarketTable } = await import("./MarketTable");
 const { BidModal } = await import("./BidModal");
 const { FilterBar } = await import("./FilterBar");
+const { MyBidsSidebar } = await import("./MyBidsSidebar");
 
 function makeMarket(overrides: Partial<Market> = {}): Market {
   return {
@@ -50,6 +54,20 @@ function makeMarket(overrides: Partial<Market> = {}): Market {
   };
 }
 
+function makeBid(overrides: Partial<Bid> = {}): Bid {
+  return {
+    id: "bid-1",
+    userId: "demo-user",
+    marketId: "m1",
+    outcome: "yes",
+    amount: 100,
+    price: 0.5,
+    status: "confirmed",
+    createdAt: "2026-01-01T00:00:00.000Z",
+    ...overrides,
+  };
+}
+
 function renderWithClient(ui: ReactElement, queryClient?: QueryClient) {
   const client = queryClient ?? new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return { queryClient: client, ...render(<QueryClientProvider client={client}>{ui}</QueryClientProvider>) };
@@ -60,6 +78,7 @@ beforeEach(() => {
   fetchMarketMock.mockReset();
   fetchBidsMock.mockReset();
   postBidMock.mockReset();
+  cancelRestingBidMock.mockReset();
   enqueueOfflineBidMock.mockReset();
   fetchBidsMock.mockResolvedValue([]);
   enqueueOfflineBidMock.mockResolvedValue({
@@ -259,5 +278,59 @@ describe("modal and bids-panel mutual exclusion", () => {
 
     expect(useBidModalStore.getState().isOpen).toBe(false);
     expect(useBidsPanelStore.getState().isOpen).toBe(true);
+  });
+});
+
+describe("MyBidsSidebar", () => {
+  it("shows a cancel action for a resting bid and calls the mutation with the bid id and userId", async () => {
+    const restingBid = makeBid({ id: "bid-resting", status: "resting", amount: 100, restingAmount: 40 });
+    fetchBidsMock.mockResolvedValue([restingBid]);
+    fetchMarketMock.mockResolvedValue(makeMarket());
+    // restingAmount is NOT reset to 0 on cancel — preserved as a
+    // historical record (see cancelRestingBid's doc comment in db.ts).
+    cancelRestingBidMock.mockResolvedValue({ ...restingBid, status: "cancelled" });
+    useBidsPanelStore.setState({ isOpen: true });
+
+    renderWithClient(<MyBidsSidebar />);
+
+    expect(await screen.findByText("$40.00 resting")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+
+    // Await the mutation's outcome before asserting the call — mutate()
+    // invokes mutationFn asynchronously, so checking the mock synchronously
+    // right after fireEvent.click would race ahead of it. A partially
+    // filled bid shows "confirmed" (a real position exists), not
+    // "cancelled" — see BidRow.tsx.
+    expect(await screen.findByText("$40.00 resting cancelled")).toBeInTheDocument();
+    expect(screen.getByText("confirmed")).toBeInTheDocument();
+    expect(cancelRestingBidMock).toHaveBeenCalledWith("bid-resting", "demo-user");
+  });
+
+  it("does not show a cancel action for a fully filled bid", async () => {
+    fetchBidsMock.mockResolvedValue([makeBid({ status: "confirmed" })]);
+    fetchMarketMock.mockResolvedValue(makeMarket());
+    useBidsPanelStore.setState({ isOpen: true });
+
+    renderWithClient(<MyBidsSidebar />);
+
+    await screen.findByText("bid-1");
+    expect(screen.queryByRole("button", { name: "Cancel" })).toBeNull();
+  });
+
+  it("rolls the optimistic cancel back if the request fails", async () => {
+    const restingBid = makeBid({ id: "bid-resting", status: "resting", amount: 100, restingAmount: 40 });
+    fetchBidsMock.mockResolvedValue([restingBid]);
+    fetchMarketMock.mockResolvedValue(makeMarket());
+    cancelRestingBidMock.mockRejectedValue(new Error("Failed to cancel bid (400)"));
+    useBidsPanelStore.setState({ isOpen: true });
+
+    renderWithClient(<MyBidsSidebar />);
+
+    await screen.findByText("$40.00 resting");
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+
+    // Optimistic update flips it to cancelled immediately, then the
+    // rejection rolls it back to resting.
+    expect(await screen.findByText("$40.00 resting")).toBeInTheDocument();
   });
 });

@@ -101,7 +101,10 @@ function BidModalDialog({ marketId }: { marketId: string }) {
   }
 
   const isPending = mutation.isPending;
-  const isConfirmed = mutation.isSuccess && mutation.data.kind === "confirmed";
+  const isConfirmed =
+    mutation.isSuccess && mutation.data.kind === "confirmed" && mutation.data.bid.status !== "resting";
+  const isResting =
+    mutation.isSuccess && mutation.data.kind === "confirmed" && mutation.data.bid.status === "resting";
   const isQueued = mutation.isSuccess && mutation.data.kind === "queued";
   const isFailed = mutation.isError;
 
@@ -147,6 +150,12 @@ function BidModalDialog({ marketId }: { marketId: string }) {
                 Bid placed!
               </Text>
             )}
+            {isResting && mutation.data.kind === "confirmed" && (
+              <Text as="p" variant="caption" className="text-gold">
+                Partially filled — ${Math.round(mutation.data.bid.restingAmount ?? 0)} resting
+                (cancel anytime from My bids)
+              </Text>
+            )}
             {isFailed && (
               <Text as="p" variant="caption" className="text-no">
                 {mutation.error?.message ?? "Something went wrong. Try again."}
@@ -159,7 +168,7 @@ function BidModalDialog({ marketId }: { marketId: string }) {
               disabled={!outcome || amount === "" || Number(amount) <= 0 || isPending}
               className={cn(isFailed && "bg-no")}
             >
-              {isConfirmed ? "Place another bid" : isFailed ? "Retry" : "Place bid"}
+              {isConfirmed || isResting ? "Place another bid" : isFailed ? "Retry" : "Place bid"}
             </Button>
           </>
         )}

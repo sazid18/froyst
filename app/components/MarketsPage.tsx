@@ -27,6 +27,7 @@ export function MarketsPage({ initialMarkets }: MarketsPageProps) {
         query={query}
         onCategoryChange={setCategory}
         onQueryChange={setQuery}
+        className="sticky top-0 z-10 -mx-6 bg-canvas px-6 py-3"
       />
       <MarketTable filters={{ category, query }} />
       <BidModal />

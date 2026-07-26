@@ -7,6 +7,8 @@ export type TagTone =
   | "no"
   | "pending"
   | "confirmed"
+  | "resting"
+  | "cancelled"
   | "failed"
   | "won"
   | "lost"
@@ -17,6 +19,8 @@ const tagToneClassMap: Record<TagTone, { bg: string; text: string }> = {
   no: { bg: "bg-no-soft", text: "text-no" },
   pending: { bg: "bg-muted", text: "text-ink-soft" },
   confirmed: { bg: "bg-gain-soft", text: "text-gain" },
+  resting: { bg: "bg-muted", text: "text-gold" },
+  cancelled: { bg: "bg-muted", text: "text-ink-soft" },
   failed: { bg: "bg-no-soft", text: "text-no" },
   won: { bg: "bg-gain-soft", text: "text-gain" },
   lost: { bg: "bg-no-soft", text: "text-no" },

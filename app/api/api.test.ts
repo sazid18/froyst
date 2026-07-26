@@ -127,15 +127,153 @@ describe("POST /api/bids", () => {
 
     expect(res.status).toBe(400);
   });
+
+  it("returns the same bid for a repeated Idempotency-Key instead of creating a second one", async () => {
+    // Regression: an offline-queued bid can be POSTed twice (the page's
+    // reconnect flush and the service worker's Background Sync flush both
+    // call flushOfflineQueue() independently, with no shared lock) — the
+    // route must dedupe by this header rather than creating a bid per call.
+    const { POST } = await import("./bids/route");
+    const makeRequest = () =>
+      new NextRequest("http://localhost/api/bids", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "Idempotency-Key": "queue-item-1" },
+        body: JSON.stringify({
+          userId: "demo-user",
+          marketId: "crypto-1",
+          outcome: "yes",
+          amount: 100,
+        }),
+      });
+
+    const first = await POST(makeRequest());
+    const second = await POST(makeRequest());
+    const firstBody = await first.json();
+    const secondBody = await second.json();
+
+    expect(second.status).toBe(201);
+    expect(secondBody.id).toBe(firstBody.id);
+
+    const { GET } = await import("./bids/route");
+    const listRes = await GET(new NextRequest("http://localhost/api/bids?userId=demo-user"));
+    const bids = await listRes.json();
+    expect(bids.filter((bid: { id: string }) => bid.id === firstBody.id)).toHaveLength(1);
+  });
+});
+
+describe("POST /api/bids/[id]/cancel", () => {
+  async function placeRestingBid() {
+    const { GET: getMarket } = await import("./markets/[id]/route");
+    const marketRes = await getMarket(new Request("http://localhost/api/markets/sports-5"), {
+      params: Promise.resolve({ id: "sports-5" }),
+    });
+    const market = await marketRes.json();
+
+    const { POST: postBid } = await import("./bids/route");
+    const bidRes = await postBid(
+      new NextRequest("http://localhost/api/bids", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          userId: "demo-user",
+          marketId: "sports-5",
+          outcome: "yes",
+          amount: market.liquidity + 5_000,
+        }),
+      })
+    );
+    return bidRes.json();
+  }
+
+  it("cancels the resting remainder and returns the updated bid", async () => {
+    const bid = await placeRestingBid();
+    expect(bid.status).toBe("resting");
+    expect(bid.restingAmount).toBe(5_000);
+
+    const { POST } = await import("./bids/[id]/cancel/route");
+    const res = await POST(
+      new NextRequest(`http://localhost/api/bids/${bid.id}/cancel`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ userId: "demo-user" }),
+      }),
+      { params: Promise.resolve({ id: bid.id }) }
+    );
+    const body = await res.json();
+
+    expect(res.status).toBe(200);
+    expect(body.status).toBe("cancelled");
+    // NOT reset to 0 — preserved so a client can still compute the
+    // actually-filled amount (amount - restingAmount) after cancellation.
+    expect(body.restingAmount).toBe(5_000);
+  });
+
+  it("400s when userId is missing", async () => {
+    const bid = await placeRestingBid();
+    const { POST } = await import("./bids/[id]/cancel/route");
+    const res = await POST(
+      new NextRequest(`http://localhost/api/bids/${bid.id}/cancel`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({}),
+      }),
+      { params: Promise.resolve({ id: bid.id }) }
+    );
+
+    expect(res.status).toBe(400);
+  });
+
+  it("400s for an unknown bid id", async () => {
+    const { POST } = await import("./bids/[id]/cancel/route");
+    const res = await POST(
+      new NextRequest("http://localhost/api/bids/nope/cancel", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ userId: "demo-user" }),
+      }),
+      { params: Promise.resolve({ id: "nope" }) }
+    );
+
+    expect(res.status).toBe(400);
+  });
+
+  it("400s when the bid has nothing resting (already fully filled)", async () => {
+    const { POST: postBid } = await import("./bids/route");
+    const bidRes = await postBid(
+      new NextRequest("http://localhost/api/bids", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ userId: "demo-user", marketId: "crypto-1", outcome: "yes", amount: 10 }),
+      })
+    );
+    const bid = await bidRes.json();
+    expect(bid.status).toBe("confirmed");
+
+    const { POST } = await import("./bids/[id]/cancel/route");
+    const res = await POST(
+      new NextRequest(`http://localhost/api/bids/${bid.id}/cancel`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ userId: "demo-user" }),
+      }),
+      { params: Promise.resolve({ id: bid.id }) }
+    );
+
+    expect(res.status).toBe(400);
+  });
 });
 
 describe("POST /api/mocks/drift", () => {
-  it("drifts a market and returns it as JSON", async () => {
+  it("drifts multiple markets and returns them as an array", async () => {
     const { POST } = await import("./mocks/drift/route");
     const res = await POST();
 
     expect(res.status).toBe(200);
     const body = await res.json();
-    expect(body.isResolved).toBe(false);
+    expect(Array.isArray(body)).toBe(true);
+    expect(body.length).toBeGreaterThan(1);
+    for (const market of body) {
+      expect(market.isResolved).toBe(false);
+    }
   });
 });
