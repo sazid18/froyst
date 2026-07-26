@@ -83,7 +83,7 @@ function MarketRowImpl({ id }: MarketRowProps) {
       )}
     >
       <div className="flex items-start gap-3">
-        <Avatar src={CATEGORY_AVATAR[market.category]} alt={market.category} size={36} />
+        {/* <Avatar src={CATEGORY_AVATAR[market.category]} alt={market.category} size={36} /> */}
         <div className="flex min-w-0 flex-col gap-1.5">
           <Text as="p" variant="body" className="line-clamp-2">
             {market.question}
