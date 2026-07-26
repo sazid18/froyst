@@ -108,6 +108,20 @@ function BidModalDialog({ marketId }: { marketId: string }) {
   const isQueued = mutation.isSuccess && mutation.data.kind === "queued";
   const isFailed = mutation.isError;
 
+  // A bid landed — fully or partially filled — auto-close shortly after so
+  // the confirmation is visible for a beat rather than closing instantly.
+  // Queued (offline) and failed bids leave the modal open so the user can
+  // see the state and retry.
+  useEffect(() => {
+    if (!isConfirmed && !isResting) {
+      return;
+    }
+    const timer = setTimeout(() => {
+      useBidModalStore.getState().close();
+    }, 1000);
+    return () => clearTimeout(timer);
+  }, [isConfirmed, isResting]);
+
   return (
     <div
       ref={dialogRef}
@@ -115,6 +129,15 @@ function BidModalDialog({ marketId }: { marketId: string }) {
       aria-modal="true"
       aria-labelledby={titleId}
       tabIndex={-1}
+      onClick={(event) => {
+        // Only the backdrop area (not a bubbled click from the modal
+        // content) should dismiss — the Scrim behind this element can
+        // never receive the click since this wrapper covers the full
+        // viewport above it.
+        if (event.target === event.currentTarget) {
+          useBidModalStore.getState().close();
+        }
+      }}
       className="fixed inset-0 z-20 flex items-center justify-center p-4 outline-none"
     >
       <div className="flex w-full max-w-md flex-col gap-4 rounded-[10px] bg-surface p-6 shadow-lg">
